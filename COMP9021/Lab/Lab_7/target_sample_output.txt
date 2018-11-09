@@ -1,0 +1,47 @@
+
+       ___________
+
+      | I | M | R |
+       ___________
+
+      | V | O | Z |
+       ___________
+
+      | A | T | K |
+       ___________
+
+In decreasing order of length between 9 and 5:
+    1 solution of length 9
+    2 solutions of length 6
+    6 solutions of length 5
+Solution of length 9:
+    MARKOVITZ
+
+Solutions of length 6:
+    MARKOV
+    MOZART
+
+Solutions of length 5:
+    KIROV
+    MAORI
+    MARIO
+    OZARK
+    RATIO
+    VOMIT
+The target was not changed.
+The target was not changed.
+The solutions are not changed.
+
+       ___________
+
+      | D | R | M |
+       ___________
+
+      | A | S | E |
+       ___________
+
+      | F | T | N |
+       ___________
+
+Solution of length 9:
+    DRAFTSMEN

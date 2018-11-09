@@ -1,0 +1,1 @@
+python3 -c "from target import *; target = Target(target = 'IMRVOZATK', minimal_length = 5); print(target); target.number_of_solutions(); target.give_solutions(); target.change_target('MT', 'TT'); target.change_target('MARKOVITZ', 'ABCDEFGHI'); target.change_target('MT', 'TM'); target.change_target('IVAKZRMO', 'DAFNEMRS'); print(target); target.give_solutions(9)"
