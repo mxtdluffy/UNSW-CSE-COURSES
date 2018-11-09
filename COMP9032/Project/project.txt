@@ -1,0 +1,609 @@
+; Author : Jingyun Shen
+
+; COMP9032 Project
+; The project simulates an online game called "Cup and Ball".
+; The user can make guesses that where the ball is. 
+; Keypad: Port L
+; (high 4 bits for column selection, low four bits for reading rows.
+; On the board, PL0-3 connect to C3-0, PL5-7 connect to R3-0.)
+; Button: Port D
+; LED: Port C
+; LCD: 1. Connect LCD data pins D0-D7 to PORTF0-7.
+;      2. Connect the four LCD control pins BE-RS to PORTA4-7.
+;===========================================================
+
+
+.include "m2560def.inc"
+
+.def temp = r16
+.def row = r22 ; current row number
+.def col = r17 ; current column number
+.def rmask = r18 ; mask for current row during scan
+.def cmask = r19 ; mask for current column during scan
+.def temp1 = r20
+.def temp2 = r21
+.def score = r23
+.def result = r25
+.def iH = r21
+.def iL = r22
+.def target_cup = r26
+.equ PORTFDIR = 0xF0 ; PF7-4: output, PF3-0, input
+.equ INITCOLMASK = 0xEF ; scan from the leftmost column,
+.equ INITROWMASK = 0x01 ; scan from the top row
+.equ ROWMASK =0x0F ; for obtaining input from Port L
+.equ loop_count = 0xFFFF
+.equ LCD_CTRL_PORT = PORTA
+.equ LCD_CTRL_DDR = DDRA
+.equ LCD_RS = 7
+.equ LCD_E = 6
+.equ LCD_RW = 5
+.equ LCD_BE = 4
+.equ LCD_DATA_PORT = PORTF
+.equ LCD_DATA_DDR = DDRF
+.equ LCD_DATA_PIN = PINF
+
+.macro STORE
+.if @0 > 63
+sts @0, @1
+.else
+out @0, @1
+.endif
+.endmacro
+
+.macro LOAD
+.if @1 > 63
+lds @0, @1
+.else
+in @0, @1
+.endif
+.endmacro
+
+; move target cup to its neighbour
+.macro random_cup
+clr r0
+ldi r16, 2
+mul target_cup, r16
+mov target_cup, r0
+
+cpi target_cup, 8
+breq reset_cup
+rjmp done_random
+
+reset_cup:
+ldi target_cup, 1
+
+done_random:
+.endmacro
+
+; send commands to LCD
+.macro do_lcd_command
+	ldi r16, @0
+	rcall lcd_command
+	rcall lcd_wait
+.endmacro
+
+; send data to LCD
+.macro do_lcd_data
+	mov r16, @0
+	rcall lcd_data
+	rcall lcd_wait
+.endmacro
+
+.org 0
+	jmp RESET
+
+.macro lcd_set
+	sbi LCD_CTRL_PORT, @0
+.endmacro
+
+.macro lcd_clr
+	cbi LCD_CTRL_PORT, @0
+.endmacro
+
+;
+; Send a command to the LCD (r16)
+;
+
+lcd_command:
+	STORE LCD_DATA_PORT, r16
+	rcall sleep_1ms
+	lcd_set LCD_E
+	rcall sleep_1ms
+	lcd_clr LCD_E
+	rcall sleep_1ms
+	ret
+
+lcd_data:
+	STORE LCD_DATA_PORT, r16
+	lcd_set LCD_RS
+	rcall sleep_1ms
+	lcd_set LCD_E
+	rcall sleep_1ms
+	lcd_clr LCD_E
+	rcall sleep_1ms
+	lcd_clr LCD_RS
+	ret
+
+lcd_wait:
+	push r16
+	clr r16
+	STORE LCD_DATA_DDR, r16
+	STORE LCD_DATA_PORT, r16
+	lcd_set LCD_RW
+
+lcd_wait_loop:
+	rcall sleep_1ms
+	lcd_set LCD_E
+	rcall sleep_1ms
+	LOAD r16, LCD_DATA_PIN
+	lcd_clr LCD_E
+	sbrc r16, 7
+	rjmp lcd_wait_loop
+	lcd_clr LCD_RW
+	ser r16
+	STORE LCD_DATA_DDR, r16
+	pop r16
+	ret
+
+.equ F_CPU = 16000000
+.equ DELAY_1MS = F_CPU / 4 / 1000 - 4
+; 4 cycles per iteration - setup/call-return overhead
+
+sleep_1ms:
+	push r24
+	push r25
+	ldi r25, high(DELAY_1MS)
+	ldi r24, low(DELAY_1MS)
+
+delayloop_1ms:
+	sbiw r25:r24, 1
+	brne delayloop_1ms
+	pop r25
+	pop r24
+	ret
+
+sleep_5ms:
+	rcall sleep_1ms
+	rcall sleep_1ms
+	rcall sleep_1ms
+	rcall sleep_1ms
+	rcall sleep_1ms
+	ret
+
+; clear the display and reset LCD
+.macro reset_lcd
+	ldi r16, low(RAMEND)
+	out SPL, r16
+	ldi r16, high(RAMEND)
+	out SPH, r16
+
+	ser r16
+	STORE LCD_DATA_DDR, r16
+	STORE LCD_CTRL_DDR, r16
+	clr r16
+	STORE LCD_DATA_PORT, r16
+	STORE LCD_CTRL_PORT, r16
+
+
+	do_lcd_command 0b00111000 ; 2x5x7
+	rcall sleep_5ms
+	do_lcd_command 0b00111000 ; 2x5x7
+	rcall sleep_1ms
+	do_lcd_command 0b00111000 ; 2x5x7
+	do_lcd_command 0b00111000 ; 2x5x7
+	do_lcd_command 0b00001000 ; display off
+	do_lcd_command 0b00000001 ; clear display
+	do_lcd_command 0b00000110 ; increment, no display shift
+	do_lcd_command 0b00001110 ; Cursor on, bar, no blink
+.endmacro
+
+; motor start spinning
+.macro motor_start
+  ldi temp, 0b10000111
+  sts DDRC, temp  ; Bit 3 will function as OC0A. ;;;;;;;;;;;;;;;some problems!!!!!
+
+  clr temp                 ; the value controls the PWM duty cycle
+  sts OCR5AH, temp
+  ldi temp, 0x4A
+  sts OCR5AL, temp
+
+  ; Set Timer0  to Phase Correct PWM mode  .
+  ldi temp, (1 << CS50)
+  sts TCCR5B, temp
+  ldi temp, (1<< WGM50)|(1<<COM5A1)
+  sts TCCR5A, temp
+.endmacro
+
+; motor stop spinning
+.macro motor_stop
+  ldi temp, 0b00000111
+  sts DDRC, temp
+.endmacro
+
+;=============create delay=================================
+.macro small_delay
+  clr iL
+loop_1:
+  cpi iL, 0xFF
+  brsh done_1
+  inc iL
+  nop
+  nop
+  nop 
+  rjmp loop_1
+done_1:  
+.endmacro
+
+.macro oneDelay      
+     clr iH
+loop_2:
+     cpi iH, 0xFF
+	 brsh done_2
+	 inc iH
+	 small_delay
+	 rjmp loop_2
+done_2:
+.endmacro
+
+.macro halfSecondDelay   ; loop the oneDelay 30 times in order to achieve one-second-delay
+ clr r16             ; clear r21
+loop_3:
+ cpi r16, 8         ; compare r21 to 30
+ breq done_3          ; if r21 == 30, done
+ oneDelay            ; else do oneDelay
+ inc r16             ; r21 ++
+ rjmp loop_3
+done_3:
+.endmacro
+;==================================end delay============================
+
+; if the user's guess is correct, all the four result indicators will flash four times
+.macro indicator_flash_win
+  ldi r16, 0b01111000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b00000000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b01111000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b00000000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b01111000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b00000000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b01111000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b00000000
+  out PORTC, r16
+.endmacro
+
+; if the user's guess is incorrect, half of the result indicator will flash four times
+.macro indicator_flash_wrong
+  ldi r16, 0b01010000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b00000000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b01010000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b00000000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b01010000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b00000000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b01010000
+  out PORTC, r16
+  halfSecondDelay
+  ldi r16, 0b00000000
+  out PORTC, r16
+.endmacro 
+
+; create dimmed light for the LEDs
+.macro dimmed_light
+  ldi temp, 0b00000100
+  sts DDRC, temp
+
+  clr temp                 ; the value controls the PWM duty cycle  
+  sts OCR5AH, temp  
+  ldi temp, 0x4A  
+  sts OCR5AL, temp     ; Set Timer5 to Phase Correct PWM mode.   
+  ldi temp, (1 << CS50)  
+  sts TCCR5B, temp  
+  ldi temp, (1<< WGM50)|(1<<COM5A1)  
+  sts TCCR5A, temp
+.endmacro
+
+;===========================keypad scanning=====================
+inital_result:
+	ldi result, 'F'
+
+keypad_reset:
+  ldi temp1, PORTFDIR ; PF7:4/PF3:0, out/in
+  sts DDRL, temp1
+
+keypad_scan:
+	ldi cmask, INITCOLMASK ; initial column mask
+	clr col ; initial column
+colloop:
+	cpi col, 4
+	breq inital_result ; if all keys are scanned, repeat.
+	sts PORTL, cmask ; otherwise, scan a column
+	ldi temp1, 0xFF ; slow down the scan operation.
+delay:
+	dec temp1
+	brne delay
+	lds temp1, PINL ; read PORTF
+	andi temp1, ROWMASK ; get the keypad output value
+	cpi temp1, 0xF ; check if any row is low
+	breq nextcol
+
+	; if yes, find which row is low
+	ldi rmask, INITROWMASK ; initialize for row check
+	clr row ;
+	jmp rowloop
+
+rowloop:
+	cpi row, 4
+	breq nextcol ; the row scan is over.
+	mov temp2, temp1
+	and temp2, rmask ; check un-masked bit
+	breq convert ; if bit is clear, the key is pressed
+	inc row ; else move to the next row
+	lsl rmask
+	jmp rowloop
+
+nextcol: ; if row scan is over
+	lsl cmask
+	inc col ; increase column value
+	jmp colloop ; go to the next column
+
+convert:
+	cpi col, 3 ; If the pressed key is in col. 3
+	breq letters ; we have a letter
+	; If the key is not in col. 3 and
+	cpi row, 3 ; if the key is in row3,
+	breq symbols ; we have a symbol or 0
+	mov temp1, row ; Otherwise we have a number in 1-9
+	lsl temp1
+	add temp1, row ;
+	add temp1, col ; temp1 = row*3 + col
+	subi temp1, -'1' ; Add the value of character ?1??
+	jmp convert_end
+
+letters:
+	ldi temp1, 'A'
+	add temp1, row ; Get the ASCII value for the key
+	jmp convert_end
+
+symbols:
+	cpi col, 0 ; Check if we have a star
+	ldi temp1,'*'
+	breq convert_end
+	cpi col, 1 ; or if we have zero
+	ldi temp1,'0'
+	breq convert_end ; if not we have hash
+	ldi temp1,'#'
+	jmp convert_end
+
+convert_end:
+	cp result, temp1	; if the input does not change, do nothing and return to first step
+	breq keypad_scan
+	mov result, temp1   ; use result as a flag, judge if input changed
+	cpi target_cup, 1   ; if the target cup is 1, go to judge if the user press '1'
+	breq judge_1
+	cpi target_cup, 2   ; if the target cup is 2, go to judge if the user press '2'
+	breq judge_2
+	cpi target_cup, 4   ; if the target cup is 4 (Cup 3), go to judge if the user press '3'
+	breq judge_3
+
+; if the user press '1', his wins, otherwise loses
+judge_1:
+	cpi result, '1'
+	breq win
+	jmp loss
+
+; if the user press '2', his wins, otherwise loses
+judge_2:
+	cpi result, '2'
+	breq win
+	jmp loss
+
+; if the user press '3', his wins, otherwise loses
+judge_3:
+	cpi result, '3'
+	breq win
+	jmp loss
+
+; if the user wins, his score is incremented
+win:
+    subi score, -1   ; scores increase
+	reset_lcd
+	ldi r16, 'S'
+	do_lcd_data r16
+	ldi r16, 'c'
+	do_lcd_data r16
+	ldi r16, 'o'
+	do_lcd_data r16
+	ldi r16, 'r'
+	do_lcd_data r16
+	ldi r16, 'e'
+	do_lcd_data r16
+	ldi r16, ':'
+	do_lcd_data r16
+	do_lcd_data score    ; display scores
+	indicator_flash_win  ; indicator flash
+	ldi temp, 0b00000111
+    out PORTC, temp      
+	jmp if_guess         ; jump to make another guess
+
+go_to_reset:
+    jmp loss_led
+
+; if the user loses, his score is decreased
+loss:
+	subi score, 1    ; scores decrease
+	cpi score, '1' 
+	brlt go_to_reset ; if score < 1, lose the game and go to reset
+	reset_lcd
+	ldi r16, 'S'
+	do_lcd_data r16
+	ldi r16, 'c'
+	do_lcd_data r16
+	ldi r16, 'o'
+	do_lcd_data r16
+	ldi r16, 'r'
+	do_lcd_data r16
+	ldi r16, 'e'
+	do_lcd_data r16
+	ldi r16, ':'
+	do_lcd_data r16
+	do_lcd_data score  ; display scores
+	indicator_flash_wrong  ; half of the indicator LEDs flash
+	ldi temp, 0b00000111
+    out PORTC, temp
+	
+	jmp if_guess 
+
+;  if the user loses all his scores, he will enter this block  
+loss_led:
+    reset_lcd
+	ldi r16, 'L'
+	do_lcd_data r16
+	ldi r16, 'o'
+	do_lcd_data r16
+	ldi r16, 's'
+	do_lcd_data r16
+	ldi r16, 'e'
+	do_lcd_data r16    ; display "Lose"
+	ldi r16, 0b01111111
+	out PORTC, r16       ; all LEDs on for a few seconds
+	halfSecondDelay
+	halfSecondDelay
+	halfSecondDelay
+	halfSecondDelay
+	halfSecondDelay
+	halfSecondDelay
+    jmp RESET           ; go to the initial state
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+RESET:
+  ldi target_cup, 1  ; set the initial target cup to 1
+  ldi score, '0'     ; initial score is 0
+  cbi DDRD, 1        ;clear bit 1 of port D
+  clr r16
+  out DDRD, r16      ;set PORTD for input button
+
+  ldi r16, low(RAMEND)
+  out SPL, r16
+  ldi r16, high(RAMEND)
+  out SPH, r16
+	
+  reset_lcd
+
+  ldi r16, 'R'
+  do_lcd_data r16
+  ldi r16, 'e'
+  do_lcd_data r16
+  ldi r16, 'a'
+  do_lcd_data r16
+  ldi r16, 'd'
+  do_lcd_data r16
+  ldi r16, 'y'
+  do_lcd_data r16
+  ldi r16, '.'
+  do_lcd_data r16
+  ldi r16, '.'
+  do_lcd_data r16
+  ldi r16, '.'
+  do_lcd_data r16     ; display "Ready..."
+
+  ser temp1 ; PORTC is output
+  out DDRC, temp1
+  
+  out PORTC, target_cup  ; display the initial target cup
+
+if_start:               ; if the user presses the push button, game starts 
+  sbic PIND, 0
+  rjmp if_start
+
+jmp game_start
+
+game_start:
+  reset_lcd
+  ldi r16, 'S'
+  do_lcd_data r16
+  ldi r16, 't'
+  do_lcd_data r16
+  ldi r16, 'a'
+  do_lcd_data r16
+  ldi r16, 'r'
+  do_lcd_data r16
+  ldi r16, 't'
+  do_lcd_data r16
+  ldi r16, '.'
+  do_lcd_data r16
+  ldi r16, '.'
+  do_lcd_data r16
+  ldi r16, '.'
+  do_lcd_data r16      ; display "Start..."
+
+  motor_start 
+
+  dimmed_light
+  ldi temp, 0b10000111  ; cup LEDs all on 
+  out PORTC, temp 
+
+  halfSecondDelay    
+  halfSecondDelay
+  halfSecondDelay
+  halfSecondDelay
+  halfSecondDelay
+  halfSecondDelay
+
+if_guess:               ; press the push button to start making guess
+  random_cup            ; the target cup keeping changing  ==> random 
+  sbic PIND, 0
+  rjmp if_guess
+
+  motor_stop            ; motor stop and start making guess
+  ;ldi 0b00000111
+  ;out PORTC, temp
+  mov temp, target_cup ;;;;;;;; ; display where the ball is for showing the procedure
+  out PORTC, temp
+
+  reset_lcd 
+  ldi r16, 'b'
+  do_lcd_data r16
+  ldi r16, 'a'
+  do_lcd_data r16
+  ldi r16, 'l'
+  do_lcd_data r16
+  ldi r16, 'l'
+  do_lcd_data r16
+  ldi r16, '?'
+  do_lcd_data r16
+
+
+  jmp keypad_reset      ; keypad start scanning and wait for the user's pressing
+
+  jmp end
+
+end:
+ rjmp end
+
+

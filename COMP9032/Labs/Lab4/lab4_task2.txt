@@ -1,0 +1,80 @@
+;
+; AssemblerApplication2.asm
+;
+; Created: 2018/10/3 12:06:14
+; Author : Shen_
+;
+
+.include "m2560def.inc" 
+.def temp=r16
+
+jmp RESET
+;.org INT0addr
+;jmp EXT_INT0
+
+;===================================================
+.macro start
+ldi temp, 0b00001000  
+sts DDRL, temp  ; Bit 3 will function as OC0A. 
+ 
+clr temp                 ; the value controls the PWM duty cycle  
+sts OCR5AH, temp  
+ldi temp, 0x4A  
+sts OCR5AL, temp
+
+; Set Timer0  to Phase Correct PWM mode  .   
+ldi temp, (1 << CS50)  
+sts TCCR5B, temp  
+ldi temp, (1<< WGM50)|(1<<COM5A1)  
+sts TCCR5A, temp 
+.endmacro
+
+.macro stop
+ldi temp, 0b00000000
+sts DDRL, temp
+.endmacro
+
+;====================================================
+RESET:
+clr temp
+cbi DDRD, 1
+clr r19
+out DDRD, r19
+ser r19
+out PORTD, r19
+;ldi temp, (2 << ISC00)
+;sts EICRA, temp
+;in temp, EIMSK
+;ori temp, (1 << INT0)
+;out EIMSK, temp
+;sei
+jmp main
+
+;==================================================
+;EXT_INT0:
+;in temp, SREG
+;push temp
+;sbic PIND, 0
+;rjmp continue
+;waiting:
+;    stop
+;	sbic PIND, 1
+;	rjmp waiting
+;continue:
+;start
+;out SREG, temp
+;  pop temp
+;reti 
+
+;===================================================
+
+main:
+sbic PIND, 0
+rjmp main
+start
+
+next:
+sbic PIND, 0
+rjmp next
+stop
+rjmp main

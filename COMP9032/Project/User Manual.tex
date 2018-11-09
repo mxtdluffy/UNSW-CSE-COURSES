@@ -1,0 +1,107 @@
+\documentclass[a4paper, 12 pt]{report}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{geometry}
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+\usepackage{algorithm}
+
+% -------------------------------------------------------------------------------------
+% BEGIN DOCUMENT
+% -------------------------------------------------------------------------------------
+\begin{document}
+\title{COMP9032 Project User Manual}
+\author{Jingyun Shen z5119202}
+\date{}
+\maketitle
+\pagestyle{empty}
+\setcounter{section}{0}
+% -------------------------------------------------------------------------------------
+% TABLE OF CONTENTS
+% -------------------------------------------------------------------------------------
+%\tableofcontents
+\newpage
+
+% -------------------------------------------------------------------------------------
+% INTRODUCTION
+% -------------------------------------------------------------------------------------
+\section{Introduction}
+
+This project simulates an online game called Cup and Ball by using AVR Lab board. In this game, a ball is shuffled under three cups and the user can guess the position of the ball. For each guess, you gain one point if it is correct or lose one point if it is wrong.\\
+\\
+In this system, we use the keypad, LCD, motor, LEDs and push buttons to simulate the game. The keypad is used for the user to input the number of cup which he guesses the ball is under. The user can press the number 1, 2 or 3 on the keypad, which indicates the ball is under LED0, LED1 or LED2, respectively. The LCD displays indicators in the game, such as the start of the game, and the scores the user gets. The operation of the motor is used to show the beginning of the game. The LEDs are in different use. LED0-2 are used to indicate three cups that may have balls hidden. LED3-6 are result indicator which indicates whether the user's guess is correct. LED7 is used to indicate the state of the motor. When the motor is running, LED7 is on, otherwise it is off. When the push button on the Lab board is pressed, the game starts.\\
+\\
+The user can simulate the game multiple times. If the user loses all the scores, the simulation will be reset automatically and the game will restart.
+\\
+
+
+\includegraphics[height = 70mm]{cup_and_ball.jpg}
+
+\newpage
+% -------------------------------------------------------------------------------------
+% DAEMONS
+% -------------------------------------------------------------------------------------
+\section{Board Connection}
+The connection of the pins on the Lab board is demonstrated as below.
+\begin{table}[!htbp]
+\resizebox{\textwidth}{!}{
+\begin{tabularx}{13cm}{XXXX}
+\multicolumn{2}{l}{AVR Pins (top and bottom row)}
+     & \multicolumn{2}{l}{Input/Output Device Pins (middle row)}\\\hline
+    Port Group & Pin & Port Group & Pin\\\hline
+    PORT A & PA4 & LCD CTRL & BE\\
+    PORT A & PA5 &LCD CTRL & RW\\
+    PORT A & PA6 &LCD CTRL & E\\
+    PORT A & PA7 & LCD CTRL& RS\\\hline
+    PORT C & PC0 & LED BAR & LED2\\
+    PORT C & PC1 & LED BAR & LED3\\
+    PORT C & PC2 & LED BAR & LED4\\
+    PORT C & PC3 & LED BAR & LED5\\
+    PORT C & PC4 & LED  BAR & LED6\\
+    PORT C & PC5 & LED BAR & LED7\\
+    PORT C & PC6 & LED BAR & LED8\\
+    PORT C & PC7 & LED BAR & LED9\\\hline
+    PORT D & RDX4 & INPUTS & PB0\\
+    PORT D & RDX3 & INPUTS & PB1\\\hline
+    PORT F & PF0 & LCD DATA & D0\\
+    PORT F & PF1 & LCD DATA & D1\\
+    PORT F & PF2 & LCD DATA & D2\\
+    PORT F & PF3 & LCD DATA & D3\\
+    PORT F & PF4 & LCD DATA & D4\\
+    PORT F & PF5 & LCD DATA & D5\\
+    PORT F & PF6 & LCD DATA & D6\\
+    PORT F & PF7 & LCD DATA & D7\\
+    PORT F & PF8 & LCD DATA & D8\\\hline
+    PORT L & PL0 & KEYPAD & C3\\
+    PORT L & PL1 & KEYPAD & C2\\
+    PORT L & PL2 & KEYPAD & C1\\
+    PORT L & PL3 & KEYPAD & C0\\
+    PORT L & PL4 & KEYPAD & R3\\
+    PORT L & PL5 & KEYPAD & R2\\
+    PORT L & PL6 & KEYPAD & R1\\
+    PORT L & PL7 & KEYPAD & R0\\\hline
+    PORT E & PE3 & JP92 & RIGHT\\\hline
+    MOTOR & Mot & JP91 & RIGHT
+\end{tabularx}
+}
+\end{table}
+
+\newpage
+% -------------------------------------------------------------------------------------
+% Control Procedure
+% -------------------------------------------------------------------------------------
+\section{Game Procedure}
+The whole procedure of this simulation system is demonstrated as below.\\
+\\
+1. Game Initialization\\
+After the simulation system is turned on (i.e. the lab board is powered on), the system is initialized and the ball is with an arbitrarily cup. In this time, an indicator "Ready..." is displayed on the LCD. The cup LED with the ball is on and the other LEDs are off.\\
+\\
+2. Game Start\\
+When the oush button PB0 is pressed, the game starts and the ball is shuffled under the three cups. In this time, an indicator "Start..." is displayed on the LCD, the motor spins and LED7 is on. The three cup LEDs (LED0-2) are all on, but in dimmed light. The result indicator LEDs (LED3-6)  are off.\\
+\\
+3. Make a Guess\\
+After the game starts, the user can start to make a guess by pressing the push button PB0 again. In this time, the motor stops and LED7 is off. The three cup LEDs remain dimmed.\\
+If the user guess that the bull is hidden in cup 1 (indicated by LED0), he can press "1" on the keypad. If the user guess that the bull is hidden in cup 2 (indicated by LED1), he can press "1" on the keypad. If the user guess that the bull is hidden in cup 3 (indicated by LED2), he can press "1" on the keypad. After making guesses, the user will have scores which is displayed on LCD as "Score: X".\\
+If the guess is correct, the on the LCD is incremented by 1, and all the result indicator LEDs will flash four times.\\
+If the guess is incorrect, the score on LCD is decremented, and half of the result indicator LEDs (LED3 on, LED4 off, LED5 on, LED6 off) will flash four times. If the score of the user is less than zero, the game restart automatically. "Lose." will be displayed on the LCD, and the system will go to the initial state. Moreover, if the first guess of a new game is incorrect, the score of the user is -1 and the game will restart. Thus, a user can get scores only if he win the first guess.\\
+\end{document}
